@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.6)
 project(lab1)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c11")
-
+set( GCC_COVERAGE_COMPILE_FLAGS "-std=c11" )
+add_definitions( ${GCC_COVERAGE_COMPILE_FLAGS} )
 
 # MPI
 find_package( MPI REQUIRED QUIET)
