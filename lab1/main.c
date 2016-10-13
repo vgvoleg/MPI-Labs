@@ -2,6 +2,7 @@
 #include "stdio.h"
 #include "stdlib.h"
 #include "mpi.h"
+#include "math.h"
 
 // Функция для считывания вектора из файла
 int* readVectorFromFile(char* filename, int* n){
@@ -51,7 +52,8 @@ typedef struct {
 
 int main(int argc, char **argv) {
     int N;
-    int* vector = (int *)malloc(sizeof(int)*100000000);
+    int* vector ;
+//            (int *)malloc(sizeof(int)*100000000);
     int ROOT = 0;
 
     // Минимальная пара, которая будет найдена в каждом процессе
@@ -70,12 +72,15 @@ int main(int argc, char **argv) {
 
     // Считываем вектор из файла только в одном (нулевом) процессе
     if (rank == ROOT) {
-        char filename[] = "../smallinput.txt";
+        char filename[] = "../input.txt";
         vector = readVectorFromFile(filename, &N);
     }
 
     // Делимся этим вектором со всеми
     MPI_Bcast(&N, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
+    if (rank != ROOT) {
+        vector = (int *) malloc(N * sizeof(int));
+    }
     MPI_Bcast(vector, N, MPI_INT, ROOT, MPI_COMM_WORLD);
 
     // Засекаем время
@@ -87,7 +92,7 @@ int main(int argc, char **argv) {
     int diff;
 
     for (int i = rank; i < N - 1; i+=size) {
-        diff = abs(vector[i] - vector[i + 1]);
+        diff = abs(vector[i] - vector[i + 1])*cos(0.0);
         if (diff < minDiff) {
             minDiff = diff;
             iMin = i;
