@@ -1,8 +1,8 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <cstring>
 #include <mpi.h>
+#include <cstring>
 
 using namespace std;
 
@@ -33,7 +33,7 @@ void resetVisited(int *&visited, int &size) {
 
 bool hasElement(vector<string> &vec, string elem) {
     for (string v: vec) {
-        if (v==elem)
+        if (v == elem)
             return true;
     }
     return false;
@@ -63,14 +63,25 @@ void DFS(vector<string> &catalogCycles, int current, int endV, int *&matrix, int
         if (i == unavailable) {
             continue;
         }
-        if ((matrix[getIndex(current, i, size)]==1) && (visited[i] == 0)) {
+        if ((matrix[getIndex(current, i, size)] == 1) && (visited[i] == 0)) {
             DFS(catalogCycles, i, endV, matrix, size, visited, current, cycle);
             visited[i] = 0;
         }
     }
 }
 
-int main(int argc, char** argv) {
+void vecToChar(vector<string>& strvec, char** cstr, int& cSize){
+    cSize = strvec.size();
+    int size = 0;
+    *cstr = new char[cSize*80];
+
+    for (unsigned long i=0; i<cSize; i++){
+        strcpy(*cstr + size , strvec[i].c_str());
+        size+=80;
+    }
+}
+
+int main(int argc, char **argv) {
     int *matrix;
     int sizeMtx;
 
@@ -82,23 +93,22 @@ int main(int argc, char** argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    if (rank == ROOT){
-        readGraph("../input/smallgraph.txt", matrix, sizeMtx);
+    if (rank == ROOT) {
+        readGraph("../input/graph.txt", matrix, sizeMtx);
     }
 
     MPI_Bcast(&sizeMtx, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
-    if (rank != ROOT){
-        matrix = new int[sizeMtx];
+    if (rank != ROOT) {
+        matrix = new int[sizeMtx*sizeMtx];
     }
-    MPI_Bcast(matrix, sizeMtx, MPI_INT, ROOT, MPI_COMM_WORLD);
-
+    MPI_Bcast(matrix, sizeMtx*sizeMtx, MPI_INT, ROOT, MPI_COMM_WORLD);
 
 
     int *visited = new int[sizeMtx];
     vector<string> cycles;
 
-    for (int i = rank; i<sizeMtx; i+=size) {
-        printf("Process %d searching for cycles from vertex %d\n", rank, i);
+    for (int i = rank; i < sizeMtx; i += size) {
+        //printf("Process %d searching for cycles from vertex %d\n", rank, i);
         resetVisited(visited, sizeMtx);
         vector<int> cycle = vector<int>();
         cycle.push_back(i);
@@ -108,7 +118,46 @@ int main(int argc, char** argv) {
 //    for (string c: cycles){
 //        cout<<c<<endl;
 //    }
-    cout <<"Cycles found in "<<rank<<" process: "<<cycles.size()<<endl;
+    cout << "Cycles found in " << rank << " process: " << cycles.size() << endl;
+
+
+    int vecSize; char *foundCycles;
+    vecToChar(cycles, &foundCycles, vecSize);
+
+    int resultVecSize; char* resultVec;
+
+    MPI_Reduce(&vecSize, &resultVecSize, 1, MPI_INT, MPI_SUM, ROOT, MPI_COMM_WORLD);
+
+    int* mass_count_r = new int[size];
+    int* mass_disp_r;
+
+    MPI_Gather(&vecSize, 1, MPI_INT, mass_count_r, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
+
+    if (rank == ROOT){
+        printf("sum from reduce = %d\n", resultVecSize);
+        resultVec = new char[resultVecSize*80];
+        mass_count_r[0]*=80;
+        mass_disp_r[0]=0;
+        for (int i = 1; i<size; i++){
+            mass_disp_r[i]= mass_disp_r[i-1] + mass_count_r[i-1];
+            mass_count_r[i]*=80;
+        }
+    }
+
+    MPI_Gatherv(foundCycles, vecSize*80, MPI_CHAR, resultVec, mass_count_r, mass_disp_r, MPI_CHAR, ROOT, MPI_COMM_WORLD);
+
+    if (rank == ROOT){
+        for (int i = 0; i<resultVecSize; i++){
+            printf("%s\n", &resultVec[i*80]);
+        }
+//        ofstream file;
+//        file.open("output.txt");
+//        for (int i=0; i<resultVecSize; i++){
+//            file<<&resultVec[i*80]<<"\n";
+//        }
+//        file.close();
+    }
+
     MPI_Finalize();
     return 0;
 }
