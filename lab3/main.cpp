@@ -2,7 +2,7 @@
 #include <fstream>
 #include <vector>
 #include <mpi.h>
-#include <cstring>
+#include <conio.h>
 
 using namespace std;
 
@@ -45,15 +45,16 @@ void DFS(vector<string> &catalogCycles, int current, int endV, int *&matrix, int
         visited[current] = 1;
         cycle.push_back(current);
     } else if (cycle.size() >= 2) {
+        char* buf = new char[10];
         cycle.push_back(endV);
-        string s = to_string(cycle[cycle.size() - 1]);
+        string s = string(itoa(cycle[cycle.size() - 1], buf, 10));
         for (int i = cycle.size() - 2; i >= 0; i--) {
-            s += "-" + to_string(cycle[i]);
+            s += "-" + string(itoa(cycle[i], buf, 10));
         }
         if (!hasElement(catalogCycles, s)) {
-            s = to_string(cycle[0]);
+            s = string(itoa(cycle[0], buf, 10));
             for (int i = 1; i < cycle.size(); i++) {
-                s += "-" + to_string(cycle[i]);
+                s += "-" + string(itoa(cycle[i], buf, 10));
             }
             catalogCycles.push_back(s);
         }
@@ -82,21 +83,24 @@ void vecToChar(vector<string>& strvec, char** cstr, int& cSize){
 }
 
 int main(int argc, char **argv) {
-    int *matrix;
-    int sizeMtx;
-
-    int ROOT = 0;
 
     MPI_Init(&argc, &argv);
 
     int size, rank;
+    double startTime, stopTime;
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    int *matrix;
+    int sizeMtx;
+    int ROOT = 0;
+    // считывание графа из файла нулевым процессом
     if (rank == ROOT) {
-        readGraph("../input/graph.txt", matrix, sizeMtx);
+        readGraph("input/graph.txt", matrix, sizeMtx);
     }
-
+    // начало записи времени
+    startTime = MPI_Wtime();
+    // отправка считанного графа всем остальным процессам
     MPI_Bcast(&sizeMtx, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
     if (rank != ROOT) {
         matrix = new int[sizeMtx*sizeMtx];
@@ -106,56 +110,51 @@ int main(int argc, char **argv) {
 
     int *visited = new int[sizeMtx];
     vector<string> cycles;
-
+    // вызов процедуры поиска в глубину для вершин, доступных каждому процессу
     for (int i = rank; i < sizeMtx; i += size) {
-        //printf("Process %d searching for cycles from vertex %d\n", rank, i);
         resetVisited(visited, sizeMtx);
         vector<int> cycle = vector<int>();
         cycle.push_back(i);
         DFS(cycles, i, i, matrix, sizeMtx, visited, -1, cycle);
     }
 
-//    for (string c: cycles){
-//        cout<<c<<endl;
-//    }
-    cout << "Cycles found in " << rank << " process: " << cycles.size() << endl;
-
-
     int vecSize; char *foundCycles;
     vecToChar(cycles, &foundCycles, vecSize);
 
     int resultVecSize; char* resultVec;
-
+    // вычисление суммы длин всех найденных массивов для выделения памяти под сбор 
     MPI_Reduce(&vecSize, &resultVecSize, 1, MPI_INT, MPI_SUM, ROOT, MPI_COMM_WORLD);
 
     int* mass_count_r = new int[size];
-    int* mass_disp_r;
-
+    int* mass_disp_r = new int[size];
+    resultVec = new char[vecSize * 80];
+    // собираем длины всех найденных массивов в один массив нулевого процесса для использования MPI_Gatherv
     MPI_Gather(&vecSize, 1, MPI_INT, mass_count_r, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
-
+    // подготовка нулевого процесса, в частности инициализация и заполнение массива смещений
     if (rank == ROOT){
-        printf("sum from reduce = %d\n", resultVecSize);
         resultVec = new char[resultVecSize*80];
         mass_count_r[0]*=80;
         mass_disp_r[0]=0;
         for (int i = 1; i<size; i++){
-            mass_disp_r[i]= mass_disp_r[i-1] + mass_count_r[i-1];
+            mass_disp_r[i]= mass_disp_r[i-1] + mass_count_r[i-1];   
             mass_count_r[i]*=80;
         }
     }
-
+    // сбор найденных массивов в один
     MPI_Gatherv(foundCycles, vecSize*80, MPI_CHAR, resultVec, mass_count_r, mass_disp_r, MPI_CHAR, ROOT, MPI_COMM_WORLD);
-
+    // запись в файл и вывод времени работы программы
     if (rank == ROOT){
-        for (int i = 0; i<resultVecSize; i++){
-            printf("%s\n", &resultVec[i*80]);
+        stopTime = MPI_Wtime();
+        printf("Total cycles found = %d\n", resultVecSize);
+        double time = stopTime - startTime;
+        printf("Time: %lf\n", time);
+        ofstream file;
+        file.open("output/output.txt");
+        for (int i=0; i<resultVecSize; i++){
+            file<<&resultVec[i*80]<<"\n";
         }
-//        ofstream file;
-//        file.open("output.txt");
-//        for (int i=0; i<resultVecSize; i++){
-//            file<<&resultVec[i*80]<<"\n";
-//        }
-//        file.close();
+        file.close();
+        printf("List of all cycles is available on output/\n");
     }
 
     MPI_Finalize();
